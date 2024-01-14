@@ -1,0 +1,108 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id
+  email     String   @unique
+  name      String
+  role      Role     @default(USER)
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  orders    Order[]
+  carts     Cart[]
+
+  @@map("users")
+}
+
+model Book {
+  id           String   @id
+  title        String
+  synopsis     String?
+  author       String
+  publisher    String
+  publish_date String
+  pages        Int
+  quantity     Int
+  price        Float    @db.DoublePrecision
+  cover_image  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  carts        Cart[]
+
+  @@map("books")
+}
+
+model Order {
+  id               String      @id
+  buyer_id         String
+  buyer_name       String
+  buyer_email      String
+  shipping_name    String
+  shipping_phone   String
+  shipping_address String
+  total_quantity   Int
+  total_amount     Float       @db.DoublePrecision
+  order_status     OrderStatus @default(PENDING)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  buyer            User        @relation(fields: [buyer_id], references: [id], onDelete: Cascade)
+  orderItems       OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id                String   @id
+  order_id          String
+  book_id           String
+  book_title        String
+  book_synopsis     String?
+  book_author       String
+  book_publisher    String
+  book_publish_date String
+  book_pages        Int
+  book_price        Float    @db.DoublePrecision
+  book_cover_image  String
+  quantity          Int
+  total_amount      Float    @db.DoublePrecision
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  order             Order    @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@map("order_items")
+}
+
+model Cart {
+  user_id   String
+  book_id   String
+  quantity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  book      Book     @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, book_id])
+  @@map("carts")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+}
