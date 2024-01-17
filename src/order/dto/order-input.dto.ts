@@ -7,6 +7,12 @@ export class OrderListInput {
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
+  search?: string;
+
+  @Expose()
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
   buyer_id?: string;
 
   @Expose()

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards, HttpStatus, HttpCode, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, UseGuards, HttpStatus, HttpCode, Query, Patch, Put } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { AuthGuard } from 'src/helpers/auth.guard';
 import { ApiBearerAuth, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -11,6 +11,7 @@ import { Role } from '@prisma/client';
 import { Roles } from 'src/helpers/roles.decorator';
 import { OrderOutputDto } from './dto/order-output.dto';
 import { OrderListInput } from './dto/order-input.dto';
+import { UpdateOrderDto, UpdateStatusDto } from './dto/update-order.dto';
 
 @ApiBearerAuth()
 @ApiTags('v1/orders')
@@ -82,6 +83,46 @@ export class OrderController {
     const order = await this.orderService.getById(ctx, id);
 
     return { status: STATUS.SUCCESS, data: order };
+  }
+
+  @UseGuards(AuthGuard)
+  @Roles(Role.ADMIN)
+  @Put(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: SwaggerApiResponseWrapper(String),
+  })
+  async updateOrder(
+    @ReqContext() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() input: UpdateOrderDto,
+  ): Promise<ApiResponseWrapper<string>> {
+    this.logger.log(ctx, `${this.updateOrder.name} called`);
+
+    await this.orderService.updateOrder(ctx, id, input);
+
+    return { status: STATUS.SUCCESS, message: 'Order updated', data: null };
+  }
+
+  @UseGuards(AuthGuard)
+  @Roles(Role.ADMIN)
+  @Patch(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    type: SwaggerApiResponseWrapper(String),
+  })
+  async updateStatus(
+    @ReqContext() ctx: RequestContext,
+    @Param('id') id: string,
+    @Body() input: UpdateStatusDto,
+  ): Promise<ApiResponseWrapper<string>> {
+    this.logger.log(ctx, `${this.updateStatus.name} called`);
+
+    await this.orderService.updateStatus(ctx, id, input);
+
+    return { status: STATUS.SUCCESS, message: 'Order updated', data: null };
   }
 
   @UseGuards(AuthGuard)

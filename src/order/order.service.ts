@@ -1,7 +1,7 @@
 import { v4 as uuidV4 } from 'uuid';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { UpdateOrderDto } from './dto/update-order.dto';
+import { UpdateOrderDto, UpdateStatusDto } from './dto/update-order.dto';
 import { PrismaService, PrismaTransaction } from 'src/helpers/prisma.service';
 import { AppLogger } from 'src/helpers/logger.service';
 import { RequestContext } from 'src/helpers/request-context.decorator';
@@ -62,12 +62,34 @@ export class OrderService {
     });
   }
 
-  async processOrder(ctx: RequestContext, user: UserOutputDto, input: CreateOrderDto, carts: CartOutputDto[]): Promise<void> {
+  async processOrder(ctx: RequestContext, user: UserOutputDto, input: CreateOrderDto, carts: CartOutputDto[], orderId?: string): Promise<void> {
     this.logger.log(ctx, `${this.processOrder.name} called`);
 
     await this.prisma.$transaction(async (tx) => {
+      if (orderId) {
+        const oldOrder = await tx.order.findFirst({
+          where: {
+            id: orderId,
+          },
+          include: {
+            orderItems: {}
+          }
+        });
+        if (!oldOrder) {
+          throw new NotFoundException('Order not found');
+        }
+
+        if (oldOrder.order_status !== OrderStatus.PENDING) {
+          throw new BadRequestException('Cannot update paid or failed order');
+        }
+        // increase book qty from old order
+        await this.increaseBookQty(ctx, tx, oldOrder.orderItems);
+        // delete old order items
+        await this.deleteOrderItems(ctx, tx, orderId);
+      }
+
       const order: Prisma.OrderUncheckedCreateInput = {
-        id: uuidV4(),
+        id: orderId || uuidV4(),
         buyer_id: user.id,
         buyer_email: user.email,
         buyer_name: user.name,
@@ -82,7 +104,7 @@ export class OrderService {
       order.total_quantity = orderItems.reduce((prev, val) => prev + val.quantity, 0);
       order.total_amount = orderItems.reduce((prev, val) => prev + val.total_amount, 0);
 
-      await this.createOrder(ctx, tx, order);
+      await this.createOrUpdateOrder(ctx, tx, order);
       await this.createOrderItems(ctx, tx, orderItems);
       await this.decreaseBookQty(ctx, tx, orderItems);
     });
@@ -130,10 +152,14 @@ export class OrderService {
     return orderItems;
   }
 
-  async createOrder(ctx: RequestContext, tx: PrismaTransaction, order: Prisma.OrderUncheckedCreateInput): Promise<void> {
-    this.logger.log(ctx, `${this.createOrder.name} called`);
-    await tx.order.create({
-      data: order,
+  async createOrUpdateOrder(ctx: RequestContext, tx: PrismaTransaction, order: Prisma.OrderUncheckedCreateInput): Promise<void> {
+    this.logger.log(ctx, `${this.createOrUpdateOrder.name} called`);
+    await tx.order.upsert({
+      where: {
+        id: order.id
+      },
+      create: order,
+      update: order,
     });
   }
 
@@ -184,11 +210,41 @@ export class OrderService {
     );
   }
 
+  async deleteOrderItems(ctx: RequestContext, tx: PrismaTransaction, orderId: string): Promise<void> {
+    this.logger.log(ctx, `${this.deleteOrderItems.name} called`);
+    await tx.orderItem.deleteMany({
+      where: {
+        order_id: orderId
+      }
+    })
+  }
+
   async getAll(ctx: RequestContext, input: OrderListInput): Promise<OrderListOutputDto> {
     this.logger.log(ctx, `${this.getAll.name} called`);
 
     const conditions = {};
     const orderBy = {};
+
+    if (input.search) {
+      input.search = input.search.replaceAll(' ', ' | ')
+      conditions['OR'] = [
+        {
+          id: {
+            search: input.search
+          }
+        },
+        {
+          buyer_name: {
+            search: input.search
+          }
+        },
+        {
+          buyer_email: {
+            search: input.search
+          }
+        },
+      ]
+    }
 
     if (input.buyer_id) {
       conditions['buyer_id'] = input.buyer_id;
@@ -220,7 +276,12 @@ export class OrderService {
       orderBy,
       include: {
         orderItems: {
-          take: 1
+          take: 1,
+        },
+        _count: {
+          select: {
+            orderItems: {}
+          }
         }
       }
     });
@@ -230,6 +291,7 @@ export class OrderService {
         return {
           ...order,
           order_items: order.orderItems,
+          order_item_count: order._count.orderItems,
         }
       }),
       pagination,
@@ -263,6 +325,54 @@ export class OrderService {
     return orderOutput;
   }
 
+  async updateOrder(ctx: RequestContext, orderId: string, input: UpdateOrderDto): Promise<void> {
+    this.logger.log(ctx, `${this.updateOrder.name} called`);
+
+    const user = await this.userService.getById(ctx, input.buyer_id);
+
+    if (input.carts.length < 1) {
+      throw new BadRequestException('Your cart is empty')
+    }
+
+    const cartsOutput = plainToInstance(CartOutputDto, input.carts);
+    await this.processOrder(ctx, user, input, cartsOutput, orderId);
+  }
+
+  async updateStatus(ctx: RequestContext, orderId: string, input: UpdateStatusDto): Promise<void> {
+    this.logger.log(ctx, `${this.updateStatus.name} called`);
+
+    const order = await this.prisma.order.findFirst({
+      where: {
+        id: orderId,
+      },
+      include: {
+        orderItems: {}
+      }
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (order.order_status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Cannot update paid or failed order');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: {
+          id: orderId,
+        },
+        data: {
+          order_status: input.order_status
+        }
+      });
+
+      if (input.order_status === OrderStatus.FAILED) {
+        await this.increaseBookQty(ctx, tx, order.orderItems);
+      }
+    });
+  }
+
   async remove(ctx: RequestContext, orderId: string): Promise<void> {
     this.logger.log(ctx, `${this.remove.name} called`);
 
@@ -278,8 +388,8 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
-    if (order.order_status === OrderStatus.PAID) {
-      throw new BadRequestException('Cannot remove paid order');
+    if (order.order_status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Cannot remove paid or failed order');
     }
 
     await this.prisma.$transaction(async (tx) => {

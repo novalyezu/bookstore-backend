@@ -89,6 +89,7 @@ export class CartService {
             id: true,
             title: true,
             price: true,
+            quantity: true,
             cover_image: true,
           }
         }

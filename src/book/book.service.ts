@@ -59,6 +59,7 @@ export class BookService {
     const orderBy = {};
 
     if (input.search) {
+      input.search = input.search.replaceAll(' ', ' | ')
       conditions['OR'] = [
         {
           title: {

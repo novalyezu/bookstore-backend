@@ -71,6 +71,10 @@ export class OrderOutputDto {
 
   @ApiProperty()
   @Expose()
+  buyer_email: string
+
+  @ApiProperty()
+  @Expose()
   shipping_name: string
 
   @ApiProperty()
@@ -92,6 +96,10 @@ export class OrderOutputDto {
   @ApiProperty()
   @Expose()
   order_status: string
+
+  @ApiProperty()
+  @Expose()
+  order_item_count: number
 
   @ApiProperty()
   @Expose()
