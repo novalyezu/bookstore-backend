@@ -1,4 +1,3 @@
-import { v4 as uuidV4 } from 'uuid';
 import { OrderStatus, Prisma, PrismaClient } from '@prisma/client';
 import { USERS } from './user';
 import { BOOKS } from './book';
@@ -18,15 +17,9 @@ async function main() {
   await Promise.all(
     USERS.map(async (user) => {
       await prisma.user.upsert({
-        where: { email: user.email },
-        update: {},
-        create: {
-          email: user.email,
-          name: user.name,
-          id: user.id,
-          role: user.role,
-          password: user.password
-        },
+        where: { id: user.id },
+        update: user,
+        create: user,
       })
     })
   )
@@ -36,19 +29,8 @@ async function main() {
     BOOKS.map(async (book) => {
       await prisma.book.upsert({
         where: { id: book.id },
-        update: {},
-        create: {
-          id: book.id,
-          title: book.title,
-          synopsis: book.synopsis,
-          author: book.author,
-          publisher: book.publisher,
-          publish_date: book.publish_date,
-          pages: book.pages,
-          quantity: book.quantity,
-          price: book.price,
-          cover_image: book.cover_image
-        },
+        update: book,
+        create: book,
       })
     })
   )
@@ -57,27 +39,31 @@ async function main() {
   await Promise.all(
     ORDERS.map(async (order) => {
       const { order_items, ...orderData } = order;
-      const orderId = uuidV4();
+      const orderInput: Prisma.OrderUncheckedCreateInput = {
+        order_status: randEnumValue(OrderStatus),
+        ...orderData,
+      };
       await prisma.$transaction(async (tx) => {
-        await tx.order.create({
-          data: {
-            id: orderId,
-            order_status: randEnumValue(OrderStatus),
-            ...orderData,
-          },
+        await tx.order.upsert({
+          where: { id: orderInput.id },
+          update: orderInput,
+          create: orderInput,
         });
 
         const orderItemsInput: Prisma.OrderItemUncheckedCreateInput[] = order_items.map(item => {
           return {
-            id: uuidV4(),
-            order_id: orderId,
+            order_id: orderData.id,
             ...item,
           }
         });
 
-        await tx.orderItem.createMany({
-          data: orderItemsInput
-        });
+        await Promise.all(orderItemsInput.map(async (item) => {
+          await tx.orderItem.upsert({
+            where: { id: item.id },
+            update: item,
+            create: item,
+          });
+        }))
       })
     })
   )
