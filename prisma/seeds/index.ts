@@ -1,8 +1,17 @@
-import { PrismaClient } from '@prisma/client';
+import { v4 as uuidV4 } from 'uuid';
+import { OrderStatus, Prisma, PrismaClient } from '@prisma/client';
 import { USERS } from './user';
 import { BOOKS } from './book';
+import { ORDERS } from './order';
 
 const prisma = new PrismaClient()
+
+function randEnumValue<T>(enumObj: T): T[keyof T] {
+  const enumValues = Object.values(enumObj);
+  const index = Math.floor(Math.random() * enumValues.length);
+
+  return enumValues[index];
+}
 
 async function main() {
   // seed Users
@@ -40,6 +49,35 @@ async function main() {
           price: book.price,
           cover_image: book.cover_image
         },
+      })
+    })
+  )
+
+  // seed Orders
+  await Promise.all(
+    ORDERS.map(async (order) => {
+      const { order_items, ...orderData } = order;
+      const orderId = uuidV4();
+      await prisma.$transaction(async (tx) => {
+        await tx.order.create({
+          data: {
+            id: orderId,
+            order_status: randEnumValue(OrderStatus),
+            ...orderData,
+          },
+        });
+
+        const orderItemsInput: Prisma.OrderItemUncheckedCreateInput[] = order_items.map(item => {
+          return {
+            id: uuidV4(),
+            order_id: orderId,
+            ...item,
+          }
+        });
+
+        await tx.orderItem.createMany({
+          data: orderItemsInput
+        });
       })
     })
   )

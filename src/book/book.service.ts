@@ -162,7 +162,7 @@ export class BookService {
       }
     });
 
-    if (input.cover_image_file) {
+    if (input.cover_image_file && !book.cover_image.includes('sample')) {
       await this.fileService.remove(ctx, book.cover_image, 'image');
     }
 
@@ -186,6 +186,9 @@ export class BookService {
       }
     });
 
-    await this.fileService.remove(ctx, book.cover_image, 'image');
+    // remove uploaded image if it is not sample
+    if (!book.cover_image.includes('sample')) {
+      await this.fileService.remove(ctx, book.cover_image, 'image');
+    }
   }
 }
