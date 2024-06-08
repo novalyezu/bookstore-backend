@@ -56,7 +56,9 @@ export class CartService {
   async getAll(ctx: RequestContext, input: CartListInput): Promise<CartListOutputDto> {
     this.logger.log(ctx, `${this.getAll.name} called`);
 
-    const conditions = {};
+    const conditions = {
+      user_id: ctx.user.sub
+    };
     const orderBy = {};
 
     if (input.orderBy) {
